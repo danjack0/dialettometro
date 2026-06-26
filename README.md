@@ -265,9 +265,8 @@ documentation of two deliberately excluded sources.
 
 ## Related work
 
-- Aepli et al., *Findings of the VarDial Evaluation Campaign 2022*,
-  ACL Anthology — [2022.vardial-1.1](https://aclanthology.org/2022.vardial-1.1/)
-- ITDI 2022 shared task data: [noe-eva/ITDI_2022](https://github.com/noe-eva/ITDI_2022) (GitHub)
+- Aepli et al., *Findings of the VarDial Evaluation Campaign 2022* —
+  [paper](https://aclanthology.org/2022.vardial-1.1/) · [data](https://github.com/noe-eva/ITDI_2022)
 
 ---
 
