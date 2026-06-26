@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dialettometro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,400;1,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&family=DM+Mono&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #F9F9F7;
+      --surface:  #FFFFFF;
+      --text:     #111111;
+      --muted:    #71717A;
+      --border:   #E4E4E2;
+      --blue:     #1B4DA0;
+      --blue-dim: #EBF0FA;
+
+      --c-lombard:    #4A7CC7;
+      --c-neapolitan: #D4622A;
+      --c-sicilian:   #C8981A;
+      --c-standard:   #52525B;
+      --c-venetian:   #1F8A6E;
+    }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3.5rem 1.5rem 5rem;
+    }
+
+    /* ---- header ---- */
+    header { text-align: center; margin-bottom: 2.75rem; }
+
+    .wordmark {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 2.25rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .wordmark em {
+      font-style: normal;
+      color: var(--blue);
+    }
+
+    .tagline {
+      margin-top: 0.4rem;
+      font-size: 0.75rem;
+      font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* ---- card ---- */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 580px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 20px rgba(0,0,0,0.05);
+    }
+
+    /* ---- input ---- */
+    textarea {
+      width: 100%;
+      min-height: 118px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1.0625rem;
+      line-height: 1.65;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      padding: 0.875rem 1rem;
+      resize: vertical;
+      color: var(--text);
+      background: var(--bg);
+      transition: border-color 0.15s;
+      outline: none;
+    }
+
+    textarea:focus { border-color: var(--blue); }
+
+    textarea::placeholder {
+      color: #AAAAAA;
+      font-style: italic;
+    }
+
+    .input-footer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 0.4rem;
+    }
+
+    .hint {
+      font-size: 0.72rem;
+      color: #BBBBBB;
+      letter-spacing: 0.01em;
+    }
+
+    /* ---- button ---- */
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      margin-top: 0.875rem;
+      padding: 0.8125rem 1.25rem;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn:hover:not(:disabled) { background: #163F87; }
+    .btn:active:not(:disabled) { transform: scale(0.99); }
+    .btn:disabled { background: #C0C8D8; cursor: not-allowed; }
+    .btn:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      display: none;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- result ---- */
+    .result {
+      display: none;
+      margin-top: 2rem;
+    }
+
+    .result.visible { display: block; }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin-bottom: 1.75rem;
+    }
+
+    /* the signature moment */
+    .dialect-name {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 3.5rem;
+      font-style: italic;
+      font-weight: 400;
+      line-height: 1.08;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.3rem;
+      transition: color 0.2s;
+    }
+
+    .dialect-name.uncertain {
+      font-size: 2rem;
+      color: var(--muted) !important;
+    }
+
+    .dialect-region {
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+      min-height: 1.1em;
+    }
+
+    .dialect-conf {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.875rem;
+      color: var(--blue);
+      margin-bottom: 1.5rem;
+    }
+
+    .dialect-conf.uncertain { color: var(--muted); }
+
+    .uncertain-note {
+      font-size: 0.875rem;
+      color: var(--muted);
+      line-height: 1.55;
+      margin-bottom: 1.5rem;
+      display: none;
+    }
+
+    /* ---- confidence bars ---- */
+    .bars { display: flex; flex-direction: column; gap: 0.65rem; }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 120px 1fr 44px;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .bar-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bar-label.top {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .bar-track {
+      height: 5px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      width: 0;
+      transition: width 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .bar-pct {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .bar-pct.top { color: var(--text); font-weight: 500; }
+
+    /* ---- footer ---- */
+    .page-footer {
+      margin-top: 2.5rem;
+      font-size: 0.72rem;
+      color: #BBBBBB;
+      text-align: center;
+      max-width: 580px;
+      line-height: 1.7;
+    }
+
+    /* ---- responsive ---- */
+    @media (max-width: 480px) {
+      body { padding: 2rem 1rem 4rem; }
+      .dialect-name { font-size: 2.75rem; }
+      .bar-row { grid-template-columns: 90px 1fr 36px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .bar-fill { transition: none; }
+      .spinner { animation: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">Dialetto<em>metro</em></div>
+  <div class="tagline">Italian dialect identifier</div>
+</header>
+
+<div class="card">
+
+  <textarea
+    id="inp"
+    placeholder="Scrivi qualcosa…"
+    spellcheck="false"
+    autocorrect="off"
+    autocapitalize="off"
+  ></textarea>
+
+  <div class="input-footer">
+    <span class="hint">Ctrl + Enter to detect</span>
+  </div>
+
+  <button class="btn" id="btn" onclick="detect()">
+    <span class="spinner" id="spinner"></span>
+    <span id="btn-label">Identifica</span>
+  </button>
+
+  <div class="result" id="result">
+    <hr class="divider">
+    <div class="dialect-name" id="dname"></div>
+    <div class="dialect-region" id="dregion"></div>
+    <div class="dialect-conf" id="dconf"></div>
+    <div class="uncertain-note" id="unote"></div>
+    <div class="bars" id="bars"></div>
+  </div>
+
+</div>
+
+<div class="page-footer">
+  Covers Lombard, Neapolitan, Sicilian, Standard Italian, and Venetian.<br>
+  Short or ambiguous text is marked <em>uncertain</em> rather than forced into a category.
+</div>
+
+<script>
+  const COLORS = {
+    lombard:    '#4A7CC7',
+    neapolitan: '#D4622A',
+    sicilian:   '#C8981A',
+    standard:   '#52525B',
+    venetian:   '#1F8A6E',
+  };
+
+  const NAMES = {
+    lombard:    'Lombardo',
+    neapolitan: 'Napoletano',
+    sicilian:   'Siciliano',
+    standard:   'Italiano standard',
+    venetian:   'Veneto',
+  };
+
+  const REGIONS = {
+    lombard:    'Lombardia · Nord Italia',
+    neapolitan: 'Campania · Sud Italia',
+    sicilian:   'Sicilia',
+    standard:   'Italiano letterario',
+    venetian:   'Veneto · Nord-Est Italia',
+  };
+
+  const inp     = document.getElementById('inp');
+  const btn     = document.getElementById('btn');
+  const spinner = document.getElementById('spinner');
+  const btnLbl  = document.getElementById('btn-label');
+  const result  = document.getElementById('result');
+  const dname   = document.getElementById('dname');
+  const dregion = document.getElementById('dregion');
+  const dconf   = document.getElementById('dconf');
+  const unote   = document.getElementById('unote');
+  const barsEl  = document.getElementById('bars');
+
+  inp.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') detect();
+  });
+
+  async function detect() {
+    const text = inp.value.trim();
+    if (!text) { inp.focus(); return; }
+
+    setLoading(true);
+    result.classList.remove('visible');
+
+    try {
+      const res  = await fetch('/api/predict', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      render(data);
+    } catch (e) {
+      renderError();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setLoading(on) {
+    btn.disabled       = on;
+    spinner.style.display = on ? 'block' : 'none';
+    btnLbl.textContent = on ? 'Identifico…' : 'Identifica';
+  }
+
+  function render(data) {
+    barsEl.innerHTML   = '';
+    unote.style.display = 'none';
+
+    if (data.rejected) {
+      dname.textContent    = 'Non riconosciuto';
+      dname.className      = 'dialect-name uncertain';
+      dname.style.color    = '';
+      dregion.textContent  = '';
+      dconf.textContent    = '';
+      dconf.className      = 'dialect-conf uncertain';
+      unote.textContent    =
+        "The text doesn't match a known dialect — it may be another language, " +
+        "a dialect not yet covered, or too short to classify reliably.";
+      unote.style.display  = 'block';
+    } else {
+      const lbl = data.top;
+      dname.textContent    = NAMES[lbl] || lbl;
+      dname.className      = 'dialect-name';
+      dname.style.color    = COLORS[lbl] || 'var(--text)';
+      dregion.textContent  = REGIONS[lbl] || '';
+      dconf.textContent    = (data.top_score * 100).toFixed(1) + '% confidence';
+      dconf.className      = 'dialect-conf';
+    }
+
+    // bars
+    (data.scores || []).forEach(({ label, score }) => {
+      const isTop = label === data.top && !data.rejected;
+      const row   = document.createElement('div');
+      row.className = 'bar-row';
+      row.innerHTML = `
+        <div class="bar-label ${isTop ? 'top' : ''}">${NAMES[label] || label}</div>
+        <div class="bar-track">
+          <div class="bar-fill" data-w="${score}" style="background:${COLORS[label] || '#CCC'}"></div>
+        </div>
+        <div class="bar-pct ${isTop ? 'top' : ''}">${Math.round(score * 100)}%</div>
+      `;
+      barsEl.appendChild(row);
+    });
+
+    // animate after paint
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      barsEl.querySelectorAll('.bar-fill').forEach(el => {
+        el.style.width = (parseFloat(el.dataset.w) * 100) + '%';
+      });
+    }));
+
+    result.classList.add('visible');
+  }
+
+  function renderError() {
+    dname.textContent    = 'Errore';
+    dname.className      = 'dialect-name uncertain';
+    dname.style.color    = '';
+    dregion.textContent  = '';
+    dconf.textContent    = '';
+    dconf.className      = 'dialect-conf uncertain';
+    unote.textContent    =
+      'Could not reach the model server. Make sure app.py is running on localhost:5000.';
+    unote.style.display  = 'block';
+    barsEl.innerHTML     = '';
+    result.classList.add('visible');
+  }
+</script>
+
+</body>
+</html>

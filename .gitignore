@@ -1,0 +1,7 @@
+dialect_xlmr/
+dialect_ngram.pt
+stacker.joblib
+hf_out/
+__pycache__/
+*.pyc
+.env
