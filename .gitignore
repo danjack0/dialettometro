@@ -1,7 +1,15 @@
-dialect_xlmr/
-dialect_ngram.pt
-stacker.joblib
+# model artifacts — large binaries, reproducible via the commands in README
+models/
+
+# ITDI external benchmark: their data has no license, eval-only, never redistributed
+itdi_predictions.txt
+itdi_test_preds.txt
+itdi_dev_preds.txt
+ITDI_2022/
+
+# training scratch
 hf_out/
 __pycache__/
 *.pyc
 .env
+.venv

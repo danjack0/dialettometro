@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import FeatureUnion
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, f1_score
 
 torch.manual_seed(0); np.random.seed(0)
 
@@ -26,6 +26,18 @@ ap.add_argument("--test", default=None)
 ap.add_argument("--features", default="char", choices=["char", "word", "both"])
 ap.add_argument("--weight-standard", type=float, default=1.0,
                 help="loss weight for the standard class; <1 makes the model predict it less eagerly")
+ap.add_argument("--boost", action="append", default=[], metavar="CLASS=FACTOR",
+                help="multiply one class's loss weight, e.g. --boost ladin=2.0. Repeatable. "
+                     "Applied on top of --class-weights. Use for a class whose recall lags "
+                     "despite high precision (it has a learnable signature but the model is "
+                     "too conservative about firing it). Trades precision for recall — only "
+                     "keep it if MACRO-F1 improves, not just that class's recall.")
+ap.add_argument("--class-weights", default="none", choices=["none", "balanced"],
+                help="balanced = inverse-frequency loss weights, computed on the FINAL "
+                     "training set (after --extra-train mixing). Needed for the expanded "
+                     "class set, where class sizes span ~7x (friulian ~3200 vs emilian ~440); "
+                     "without it the thin classes get swamped. Composes with --weight-standard, "
+                     "which is applied on top as a multiplier.")
 ap.add_argument("--save", default=None,
                 help="path to save the trained model + vectorizer bundle (e.g. dialect_model.pt)")
 args = ap.parse_args()
@@ -58,18 +70,35 @@ classes = sorted(set(labels)); class_to_id = {c: i for i, c in enumerate(classes
 y = np.array([class_to_id[l] for l in labels])
 print(f"Loaded {len(sentences)} sentences | classes: {classes} | features: {args.features}")
 
-# 2. SPLIT (source-aware)
+# 2. SPLIT (source-aware, row-count-aware, per label)
+# Uses the shared helper rather than sklearn's GroupShuffleSplit: that samples a
+# fraction of GROUPS, not rows, so with uneven article sizes it produced wildly
+# skewed validation sets (ligurian 1753 rows vs emilian 55 in one run) — which
+# then corrupted the early-stopping signal. See split_utils.py.
 if any(s for s in sources) and len(set(sources)) > len(classes):
-    from sklearn.model_selection import GroupShuffleSplit
-    tr_idx, va_idx = next(GroupShuffleSplit(1, test_size=0.2, random_state=0)
-                          .split(sentences, y, groups=sources))
-    print(f">> Honest split: validating on UNSEEN articles ({len(set(sources[va_idx]))} held out).")
+    from split_utils import split_indices, SPLIT_SEED
+    tr_idx, va_idx = split_indices(sentences, labels, sources,
+                                   test_size=0.2, seed=SPLIT_SEED)
+    tr_idx, va_idx = np.array(tr_idx), np.array(va_idx)
+    print(f">> Honest split: validating on UNSEEN articles "
+          f"({len(set(sources[va_idx]))} held out).")
 else:
     from sklearn.model_selection import train_test_split as _tts
     tr_idx, va_idx = _tts(np.arange(len(y)), test_size=0.2, stratify=y, random_state=0)
 
 X_train_txt = list(sentences[tr_idx]); y_train = y[tr_idx]
 X_val_txt = list(sentences[va_idx]);   y_val = y[va_idx]
+
+# Per-class val composition. A badly skewed val set silently corrupts early
+# stopping (this is exactly how the old GroupShuffleSplit bug went unnoticed),
+# so surface it every run rather than trusting the split.
+print("   per-class train/val split:")
+for c in classes:
+    i = class_to_id[c]
+    n_tr = int((y_train == i).sum()); n_va = int((y_val == i).sum())
+    pct = n_va / (n_tr + n_va) * 100 if (n_tr + n_va) else 0
+    flag = "  <-- SKEWED" if pct > 35 or pct < 8 else ""
+    print(f"     {c:>12}  train {n_tr:>6}  val {n_va:>5}  ({pct:4.1f}% val){flag}")
 
 # 2b. MIX casual training data
 if args.extra_train:
@@ -103,9 +132,31 @@ class DialectNet(nn.Module):
 
 model = DialectNet(input_dim, HIDDEN, len(classes))
 class_w = torch.ones(len(classes))
+if args.class_weights == "balanced":
+    # inverse-frequency weights, computed on y_train AFTER --extra-train mixing
+    # so the weights reflect what the model actually sees. Same formula as
+    # sklearn's class_weight='balanced': n_samples / (n_classes * count_c).
+    counts = np.bincount(y_train, minlength=len(classes)).astype(np.float64)
+    counts[counts == 0] = 1.0          # unseen class: neutral weight, no div-by-zero
+    w = len(y_train) / (len(classes) * counts)
+    class_w = torch.tensor(w, dtype=torch.float32)
+    print(">> balanced class weights (inverse frequency):")
+    for c in classes:
+        i = class_to_id[c]
+        print(f"     {c:>12}  n={int(counts[i]):>6}  weight={class_w[i]:.3f}")
 if "standard" in class_to_id and args.weight_standard != 1.0:
-    class_w[class_to_id["standard"]] = args.weight_standard
-    print(f">> standard class loss weight = {args.weight_standard}")
+    class_w[class_to_id["standard"]] *= args.weight_standard
+    print(f">> standard class loss weight multiplied by {args.weight_standard} "
+          f"-> {class_w[class_to_id['standard']]:.3f}")
+for spec in args.boost:
+    if "=" not in spec:
+        raise SystemExit(f"--boost expects CLASS=FACTOR, got '{spec}'")
+    cname, factor = spec.rsplit("=", 1)
+    if cname not in class_to_id:
+        raise SystemExit(f"--boost: unknown class '{cname}'. Known: {classes}")
+    class_w[class_to_id[cname]] *= float(factor)
+    print(f">> {cname} class loss weight boosted x{factor} "
+          f"-> {class_w[class_to_id[cname]]:.3f}")
 loss_fn = nn.CrossEntropyLoss(weight=class_w)
 optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 def accuracy(lg, t): return (lg.argmax(1) == t).float().mean().item()
@@ -138,6 +189,8 @@ print(f"Restored best model from epoch {best_epoch} (val acc {val_acc_best:.3f})
 
 def report(yt, yp, title):
     print(f"\n=== {title} ===")
+    print(f"macro-F1: {f1_score(yt, yp, average='macro', zero_division=0):.4f}   "
+          f"(headline metric — accuracy is misleading under class imbalance)")
     print("         " + " ".join(f"{c[:4]:>5}" for c in classes))
     cm = confusion_matrix(yt, yp, labels=list(range(len(classes))))
     for i, c in enumerate(classes):
@@ -156,7 +209,7 @@ if args.test:
     if t_txt:
         Xt = torch.from_numpy(vectorizer.transform(t_txt).toarray().astype(np.float32))
         with torch.no_grad(): t_pred = model(Xt).argmax(1).numpy()
-        print(f"\nCROSS-DOMAIN accuracy: {accuracy_score(t_y, t_pred):.3f} (vs {val_acc_best:.3f} in-domain)")
+        print(f"\nCROSS-DOMAIN macro-F1: {f1_score(t_y, t_pred, average='macro', zero_division=0):.4f} | accuracy: {accuracy_score(t_y, t_pred):.3f} (vs {val_acc_best:.3f} in-domain acc)")
         report(t_y, t_pred, f"CROSS-DOMAIN test: {args.test} ({len(t_txt)} sentences)")
 
 # SAVE: bundle weights + fitted vectorizer + metadata into one file so the

@@ -294,9 +294,9 @@
     <span class="hint">Ctrl + Enter to detect</span>
   </div>
 
-  <button class="btn" id="btn" onclick="detect()">
+  <button class="btn" id="btn" onclick="detect()" disabled>
     <span class="spinner" id="spinner"></span>
-    <span id="btn-label">Identifica</span>
+    <span id="btn-label">Caricamento…</span>
   </button>
 
   <div class="result" id="result">
@@ -310,35 +310,55 @@
 
 </div>
 
-<div class="page-footer">
-  Covers Lombard, Neapolitan, Sicilian, Standard Italian, and Venetian.<br>
+<div class="page-footer" id="footer">
+  Loading…<br>
   Short or ambiguous text is marked <em>uncertain</em> rather than forced into a category.
 </div>
 
 <script>
-  const COLORS = {
-    lombard:    '#4A7CC7',
-    neapolitan: '#D4622A',
-    sicilian:   '#C8981A',
-    standard:   '#52525B',
-    venetian:   '#1F8A6E',
-  };
+  // NAMES / COLORS / REGIONS are no longer hardcoded here. This used to be a
+  // second, independent copy of the class list (only the original 5
+  // dialects) — when the model was expanded, the other 7 fell back to raw
+  // internal labels with no region and a flat gray bar, because nothing here
+  // knew they existed. Fetching /api/classes means app.py's DIALECT_META is
+  // the ONE place a dialect is defined; this page reflects whatever model is
+  // actually loaded, including any future expansion, with no edits here.
+  let NAMES = {}, COLORS = {}, REGIONS = {};
 
-  const NAMES = {
-    lombard:    'Lombardo',
-    neapolitan: 'Napoletano',
-    sicilian:   'Siciliano',
-    standard:   'Italiano standard',
-    venetian:   'Veneto',
-  };
+  function fallbackColor(label) {
+    let h = 0;
+    for (const ch of label) h += ch.charCodeAt(0);
+    return `hsl(${h % 360}, 45%, 45%)`;
+  }
 
-  const REGIONS = {
-    lombard:    'Lombardia · Nord Italia',
-    neapolitan: 'Campania · Sud Italia',
-    sicilian:   'Sicilia',
-    standard:   'Italiano letterario',
-    venetian:   'Veneto · Nord-Est Italia',
-  };
+  async function loadMeta() {
+    const footer = document.getElementById('footer');
+    try {
+      const res = await fetch('/api/classes');
+      const data = await res.json();
+      const dialectClasses = [];
+      for (const [label, m] of Object.entries(data.meta || {})) {
+        NAMES[label]   = m.it || label;
+        REGIONS[label] = m.region || '';
+        COLORS[label]  = m.color || fallbackColor(label);
+        if (m.is_dialect !== false) dialectClasses.push(NAMES[label]);
+      }
+      const list = dialectClasses.length
+        ? dialectClasses.slice(0, -1).join(', ') +
+          (dialectClasses.length > 1 ? ', and ' : '') + dialectClasses.slice(-1)
+        : '';
+      footer.innerHTML =
+        `Covers ${list}${data.meta && data.meta.standard ? ', plus Standard Italian' : ''}.<br>` +
+        `Short or ambiguous text is marked <em>uncertain</em> rather than forced into a category.`;
+    } catch (e) {
+      footer.innerHTML =
+        'Could not reach the model server. Make sure app.py is running.<br>' +
+        'Short or ambiguous text is marked <em>uncertain</em> rather than forced into a category.';
+    } finally {
+      btn.disabled = false;
+      btnLbl.textContent = 'Identifica';
+    }
+  }
 
   const inp     = document.getElementById('inp');
   const btn     = document.getElementById('btn');
@@ -350,6 +370,8 @@
   const dconf   = document.getElementById('dconf');
   const unote   = document.getElementById('unote');
   const barsEl  = document.getElementById('bars');
+
+  loadMeta();
 
   inp.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') detect();

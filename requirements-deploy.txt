@@ -1,0 +1,20 @@
+# Serving-only dependencies for the deployed demo (n-gram model).
+# The full requirements.txt is for reproducing the research pipeline —
+# training, scraping, transformer fine-tuning, benchmark eval.
+#
+# Deliberately EXCLUDED here (not needed to serve the n-gram model):
+#   transformers, accelerate, sentencepiece  -> only the stacker/XLM-R path
+#   requests, pysbd                          -> only scraping/cleaning
+#
+# torch is pinned to the CPU-only wheel index: the default wheel pulls
+# hundreds of MB of CUDA libraries that are useless on a CPU host and will
+# blow up build time and disk on a small free instance.
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+
+torch
+scikit-learn
+numpy
+flask
+joblib
+huggingface_hub

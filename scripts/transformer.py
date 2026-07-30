@@ -9,7 +9,7 @@ result is directly comparable to the from-scratch baseline:
     in-domain   macro-F1 = 0.90
 
 Mirrors model.py exactly:
-  * source-aware split: GroupShuffleSplit(test_size=0.2, random_state=0) on the
+  * source-aware split: split_utils.per_label_group_split(test_size=0.2) on the
     `source` column of --data  -> in-domain train / in-domain val (unseen articles)
   * --extra-train mixed WHOLESALE into training (teaches casual register)
   * --test held out, scored once as the cross-domain scoreboard
@@ -46,7 +46,6 @@ import argparse
 import csv
 import numpy as np
 import torch
-from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import (
     confusion_matrix, classification_report, accuracy_score, f1_score,
 )
@@ -67,6 +66,13 @@ ap.add_argument("--test", default=None)
 ap.add_argument("--model", default="xlm-roberta-base",
                 help="HF model id. Try bert-base-multilingual-cased for mBERT.")
 ap.add_argument("--epochs", type=int, default=5)
+ap.add_argument("--boost", action="append", default=[], metavar="CLASS=FACTOR",
+                help="multiply one class's loss weight, e.g. --boost ladin=2.0. Repeatable. "
+                     "Mirrors model.py. Only keep it if MACRO-F1 improves.")
+ap.add_argument("--class-weights", default="none", choices=["none", "balanced"],
+                help="balanced = inverse-frequency loss weights, computed on the FINAL "
+                     "training set (after --extra-train mixing). Mirrors model.py so the "
+                     "two base models stay methodologically comparable.")
 ap.add_argument("--batch", type=int, default=16,
                 help="per-device train batch. Lower to 8 on a 6 GB laptop GPU.")
 ap.add_argument("--grad-accum", type=int, default=1,
@@ -106,11 +112,15 @@ y = np.array([class_to_id[l] for l in labels])
 print(f"Loaded {len(sentences)} sentences | classes: {classes} | model: {args.model}")
 
 # ---------------------------------------------------------------- 2. SPLIT
-# source-aware: validate on UNSEEN articles (identical call to model.py)
+# source-aware AND row-count-aware, per label (identical call to model.py).
+# sklearn's GroupShuffleSplit samples a fraction of GROUPS, not rows, which with
+# uneven article sizes produced badly skewed val sets and corrupted early
+# stopping. See split_utils.py.
 if any(s for s in sources) and len(set(sources)) > len(classes):
-    tr_idx, va_idx = next(
-        GroupShuffleSplit(1, test_size=0.2, random_state=0)
-        .split(sentences, y, groups=sources))
+    from split_utils import split_indices, SPLIT_SEED
+    tr_idx, va_idx = split_indices(sentences, labels, sources,
+                                   test_size=0.2, seed=SPLIT_SEED)
+    tr_idx, va_idx = np.array(tr_idx), np.array(va_idx)
     print(f">> Honest split: validating on UNSEEN articles "
           f"({len(set(sources[va_idx]))} held out).")
 else:
@@ -202,11 +212,59 @@ except TypeError:
     targs = TrainingArguments(evaluation_strategy="epoch", save_strategy="epoch",
                               save_total_limit=1, **ta_kwargs)
 
-trainer = Trainer(
+# ---------------------------------------------------------------- 5b. CLASS WEIGHTS
+# HF Trainer's default loss is unweighted. With the expanded class set spanning
+# ~7x in size (friulian ~3200 vs emilian ~440), the thin classes get swamped.
+# WeightedTrainer applies the same inverse-frequency weights model.py uses, so
+# the two base models stay methodologically comparable.
+class WeightedTrainer(Trainer):
+    def __init__(self, class_weights=None, **kw):
+        super().__init__(**kw)
+        self.class_weights = class_weights
+
+    def compute_loss(self, model, inputs, return_outputs=False, **kw):
+        labels_ = inputs.pop("labels")
+        outputs = model(**inputs)
+        logits = outputs.logits
+        w = (self.class_weights.to(logits.device)
+             if self.class_weights is not None else None)
+        loss = torch.nn.functional.cross_entropy(logits, labels_, weight=w)
+        return (loss, outputs) if return_outputs else loss
+
+
+class_weights_t = None
+if args.class_weights == "balanced":
+    counts = np.bincount(np.array(train_y), minlength=len(classes)).astype(np.float64)
+    counts[counts == 0] = 1.0
+    w = len(train_y) / (len(classes) * counts)
+    class_weights_t = torch.tensor(w, dtype=torch.float32)
+    print(">> balanced class weights (inverse frequency):")
+    for c in classes:
+        i = class_to_id[c]
+        print(f"     {c:>12}  n={int(counts[i]):>6}  weight={class_weights_t[i]:.3f}")
+
+if args.boost:
+    if class_weights_t is None:
+        class_weights_t = torch.ones(len(classes), dtype=torch.float32)
+    for spec in args.boost:
+        if "=" not in spec:
+            raise SystemExit(f"--boost expects CLASS=FACTOR, got '{spec}'")
+        cname, factor = spec.rsplit("=", 1)
+        if cname not in class_to_id:
+            raise SystemExit(f"--boost: unknown class '{cname}'. Known: {classes}")
+        class_weights_t[class_to_id[cname]] *= float(factor)
+        print(f">> {cname} class loss weight boosted x{factor} "
+              f"-> {class_weights_t[class_to_id[cname]]:.3f}")
+
+TrainerCls = WeightedTrainer if class_weights_t is not None else Trainer
+extra_kw = {"class_weights": class_weights_t} if class_weights_t is not None else {}
+
+trainer = TrainerCls(
     model=model, args=targs,
     train_dataset=train_ds, eval_dataset=val_ds,
     data_collator=collator, compute_metrics=compute_metrics,
     callbacks=[EarlyStoppingCallback(early_stopping_patience=args.patience)],
+    **extra_kw,
 )
 trainer.train()
 

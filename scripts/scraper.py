@@ -55,7 +55,13 @@ def fetch_extract(lang, title, project="wikipedia"):
               "explaintext": "true", "redirects": "1", "format": "json"}
     data = polite_get(f"https://{host}/w/api.php", params)
     page = list(data["query"]["pages"].values())[0]
-    if "missing" in page or "extract" not in page or not page["extract"].strip():
+    if "missing" in page:
+        print("  !! Page does not exist — skipping.")
+        return None
+    if "extract" not in page or not page["extract"].strip():
+        # Page exists (has a pageid) but has no article text — almost always a
+        # redirect that slipped through, or a genuinely contentless stub.
+        print("  !! Page exists but has no extract text (redirect/stub) — skipping.")
         return None
     return page["extract"]
 

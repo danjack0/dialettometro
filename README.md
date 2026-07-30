@@ -1,292 +1,182 @@
-# Dialettometro — Italian Dialect Identifier
+# Dialettometro
 
-A 6-class Italian dialect classifier covering Sicilian, Venetian, Neapolitan,
-Lombard, Standard Italian, and out-of-scope rejection. Ships as a local web app:
-type a sentence, get a dialect and confidence score.
+An Italian regional dialect classifier covering 11 varieties, built as an
+independent replication of the [VarDial 2022 ITDI shared task](https://github.com/noe-eva/ITDI_2022),
+with a product-oriented extension for standalone use.
 
-**Cross-domain macro-F1: 0.963** (stacked ensemble) / **0.96** (n-gram baseline)
-
----
-
-## Key Finding
-
-Fine-tuning XLM-RoBERTa (`xlm-roberta-base`) on this task matched but did not
-beat a TF-IDF character + word n-gram baseline — macro-F1 0.96 on both, across
-three independent rounds of data cleaning. This independently replicates the
-central finding of the [VarDial 2022 ITDI shared task](https://aclanthology.org/2022.vardial-1.1/),
-which found shallow n-gram models equal or outperform large pretrained transformers
-on Italian dialect identification. The ceiling is the task — genuine lexical
-overlap between geographically adjacent dialects — not model capacity.
-
-A leakage-free stacked ensemble (logistic meta-learner over n-gram + XLM-R
-probability vectors) raised the headline to **0.963** on the full 6-class task
-(including out-of-scope rejection), confirming that the two models make
-complementary errors (only 28% shared) even when neither individually beats the other.
+**Try it:** `python scripts/app.py --model models/product_ngram_boost.pt` → `http://localhost:5000`
 
 ---
+
+## What this is
+
+Two models trained from one shared, audited dataset:
+
+| | **ITDI-parity** | **Product** |
+|---|---|---|
+| Classes | 11 (matches the shared task exactly) | 13 (11 dialects + Standard Italian + "other" rejection) |
+| Purpose | Direct comparison against VarDial 2022 | Usable standalone tool |
+| Standard/other | Excluded | Included |
+
+**Dialects covered:** Emilian-Romagnol, Friulian, Ladin, Ligurian, Lombard,
+Neapolitan, Piedmontese, Sardinian, Sicilian, Tarantino, Venetian.
+
+Both models are 3-way stacked ensembles: a from-scratch character+word n-gram
+network, a fine-tuned XLM-RoBERTa transformer, and a logistic-regression
+meta-model that combines them — trained and validated with strict
+article-level splitting so no source document ever leaks between train and
+test.
 
 ## Results
 
-| Model | In-domain macro-F1 | Cross-domain macro-F1 |
+### Held-out test (own Wikipedia-derived split, article-level, never seen in training)
+
+| | ITDI-parity (11-class) | Product (13-class) |
 |---|---|---|
-| TF-IDF n-gram + MLP (baseline) | 0.93 | 0.96 |
-| XLM-RoBERTa fine-tuned | 0.92 | 0.958 |
-| **Stacked ensemble (6-class)** | — | **0.963** |
+| n-gram baseline | 0.8331 | 0.8411 |
+| XLM-R | 0.8175 | 0.8507 |
+| **Stacker** | **0.8699** | **0.8767** |
 
-*Cross-domain eval: `testset_eval_clean.csv` (2,892 sentences — 2,392 dialect +
-500 out-of-scope, casual register: Tatoeba, Wikisource literary works).
-In-domain val: held-out Wikipedia articles, source-aware split.
-Headline metric: macro-F1 (eval is ~42% Sicilian; raw accuracy is misleading).*
+All scores are macro-F1. The stacker beats both base models in both configs —
+the two architectures fail on different sentences (n-gram wins on
+fine-grained dialect-vs-dialect distinctions; XLM-R wins on
+dialect-vs-standard-vs-other), so stacking recovers cases neither model gets
+alone. Ligurian in particular jumps from ~0.63 F1 (either base model alone) to
+~0.78 (stacker).
 
-Per-class cross-domain F1 (stacked ensemble, 6-class):
+### External benchmark: VarDial 2022 ITDI held-out set (eval-only, never trained on)
 
-| Class | Precision | Recall | F1 | Support |
-|---|---|---|---|---|
-| Lombard | 0.99 | 0.95 | 0.97 | 330 |
-| Neapolitan | 0.90 | 0.99 | 0.94 | 171 |
-| Sicilian | 0.99 | 0.97 | 0.98 | 1,000 |
-| Standard Italian | 0.95 | 0.99 | 0.97 | 750 |
-| Venetian | 0.93 | 0.91 | 0.92 | 141 |
-| Other (rejection) | 0.99 | 0.98 | 0.98 | 500 |
+The ITDI 2022 organizers' dev/test files were used strictly to score the
+trained model — never for training, never redistributed (see
+[Data & Licensing](#data--licensing)).
 
----
-
-## Methodology
-
-### Data
-
-All data sourced, audited, and licensed for public redistribution under
-**CC-BY-SA 4.0** (see [SOURCES.md](SOURCES.md)).
-
-| File | Rows | Description |
+| | dev.txt (7 of 11 classes present) | test_gold_standard.txt (8 of 11 classes present) |
 |---|---|---|
-| `balanced_clean.csv` | 3,353 | 5-class Wikipedia training data, ~669/class |
-| `balanced_6class.csv` | 4,044 | + 691 `other` sentences (22 Latin-script languages) |
-| `testset_train_clean.csv` | 2,414 | Casual-register sentences mixed into training |
-| `testset_eval_clean.csv` | 2,892 | **Held-out scoreboard** — never used in training |
-| `other_data.csv` | ~11,000 | Latin-script language sentences for `other` class |
-| `other_eval.csv` | 500 | Held-out `other` sentences for eval |
+| Weighted-F1 (shared-task headline) | **0.7865** | **0.5707** |
+| Macro-F1 (present classes) | 0.7928 | 0.5564 |
+| Official baseline — fastText | 0.1322 | 0.1322 |
+| Official baseline — SVM unigram | 0.4899 | 0.4899 |
+| Official baseline — SVM char n-gram (best) | 0.7726 | 0.7726 |
 
-Schema: `sentence, label, source` — the `source` column records per-row
-provenance and is used for the source-aware split.
+Dev and test each cover a different partial subset of the 11 classes, so
+neither is directly comparable to the model's own 11-class held-out score
+above — different label set, different (casual, "sources unknown") register.
+On dev, the model ties the organizers' strongest baseline. On test, it lands
+between the SVM-unigram and SVM-char-n-gram baselines.
 
-### Integrity measures
+### What the external benchmark revealed that the internal split couldn't
 
-- **Source-aware split:** `GroupShuffleSplit` on the `source` column ensures
-  validation articles are fully held out — no sentence from the same Wikipedia
-  article appears in both train and val. Prevents topic memorization.
-- **Zero train/eval overlap:** verified programmatically. `testset_eval_clean.csv`
-  was never seen by any model during training.
-- **Data cleaning, blind to predictions:** 102 junk rows (ISBNs, Latin taxonomy,
-  English metadata) and 25 confirmed mislabels removed by content rule applied
-  uniformly — flagged rows were removed whether the model got them right or wrong.
-  Full removal manifests are generated by `clean_data.py`.
-- **Stacker trained on held-out data:** the logistic meta-learner is trained on
-  the 800-row in-domain Wikipedia val split (never seen by base model weights),
-  then scored once on `testset_eval_clean.csv`.
+Two real, explainable weaknesses surfaced only by testing against genuinely
+external, casual-register text:
 
-### Pipeline
+- **Ligurian flips failure mode under domain shift.** On the model's own
+  held-out Wikipedia test: precision 0.80 / recall 0.51 (under-fires). On
+  ITDI's casual text: precision 0.46-0.53 / recall 0.75-0.95 (over-fires,
+  absorbing Venetian and Sicilian sentences). The class-weight boost that
+  helped the Wikipedia score appears to make the model too eager to fire
+  Ligurian on ambiguous casual text specifically.
+- **Tarantino nearly collapses on real casual text**: F1 0.94-0.96 on the
+  model's own held-out set vs. **0.21** on ITDI. True Tarantino sentences
+  scatter to Neapolitan and Sicilian almost as often as they're caught
+  correctly — consistent with Tarantino's real dialectological position as a
+  transitional variety between Neapolitan and Sicilian-Salentino. The
+  Wikipedia-trained signal is encyclopedic-register-specific and doesn't
+  transfer to spoken/casual text.
+
+### Known limitation: Ladin
+
+Precision stays high (0.97-1.00) but recall collapses (0.24-0.42 depending on
+config) — the model learned a narrow, confident signature from the ~1,250
+training rows available (Ladin's Wikipedia is small) and won't fire on
+anything outside it. This is a data-volume ceiling, not a bug; boosting its
+loss weight helps but has a hard limit.
+
+## Project structure
 
 ```
-Wikipedia / Tatoeba / Wikisource
-         │
-    scraper.py / tatoeba.py          ← data collection
-         │
-    audit_junk.py                    ← content-rule junk detection
-    clean_data.py / prep_other.py    ← junk removal, mislabel removal, other-class prep
-         │
-    model.py                         ← TF-IDF + MLP baseline
-    transformer.py                   ← XLM-RoBERTa fine-tuning
-         │
-    stack_train.py                   ← leakage-free stacked ensemble
-         │
-    app.py + index.html              ← local web interface
+data/
+  raw/       scraped Wikipedia + Tatoeba text, pre-cleaning
+  titles/    harvested article title lists, one per source wiki
+  cleaned/   post-audit, balanced dataset (balanced_13class.csv)
+  configs/   final train/test splits for both configs
+scripts/     full pipeline: harvest → scrape → audit → balance → split →
+             train (n-gram, transformer, stacker) → predict → serve
+models/      trained model artifacts (n-gram bundles, XLM-R dirs, stackers)
+index.html   frontend, served by scripts/app.py
 ```
 
----
+## Pipeline
+
+1. `harvest_titles.py` — pulls real article titles per wiki via the
+   MediaWiki API, excluding redirects and near-empty stubs
+2. `scraper.py` / `tatoeba.py` — fetch article text / Tatoeba sentences
+3. `audit_junk.py` — two-pass content audit: no-signal junk (ISBNs,
+   citations, foreign-language contamination) and template/near-duplicate
+   bot-boilerplate detection, both blind to any model's predictions
+4. `prepare_expansion_dataset.py` — applies the audit, reduces template
+   boilerplate, caps oversized classes with source-diversity-aware sampling
+5. `split_configs.py` / `split_utils.py` — builds both class configs with a
+   row-count-aware, per-label, article-level train/test split (standard
+   `GroupShuffleSplit` samples by group *count*, which badly skews splits
+   when article lengths vary — this project uses a custom split that targets
+   the row ratio instead)
+6. `model.py` — from-scratch char+word n-gram network, with optional
+   balanced class weighting and per-class loss boosting
+7. `transformer.py` — fine-tunes XLM-RoBERTa with the same split and
+   weighting conventions
+8. `stack_train.py` — logistic-regression meta-model over both base models'
+   probabilities, meta-trained on the exact validation rows the base models
+   held out (leakage-free by construction)
+9. `predict.py` — CLI + importable inference, with a confidence floor for
+   rejecting unrecognized input
+10. `app.py` / `index.html` — Flask API + frontend; both derive their class
+    list from the loaded model, not a hardcoded list, so the UI never falls
+    out of sync when the class set changes
+11. `itdi_eval.py` — eval-only scoring against the official VarDial 2022
+    ITDI benchmark
 
 ## Setup
-
-**Prerequisites:** Python 3.10+, pip
-
-```bash
-git clone https://github.com/danjack0/dialettometro.git
-cd dialettometro
-```
-
-It is recommended to use a virtual environment:
-
-```bash
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS / Linux
-source .venv/bin/activate
-```
-
-Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-**Train the baseline model** (CPU-friendly, ~2 min):
+Train both configs end-to-end (see `scripts/` docstrings for full flag
+reference):
 
 ```bash
-python model.py --data data/balanced_6class.csv --extra-train data/testset_train_clean.csv \
-    --test data/testset_eval_clean.csv --features both --save dialect_ngram.pt
+python scripts/model.py --data data/configs/product_config_train.csv \
+    --test data/configs/product_config_test.csv --features both \
+    --class-weights balanced --boost ladin=2.5 --boost ligurian=2.0 \
+    --save models/product_ngram_boost.pt
+
+python scripts/transformer.py --data data/configs/product_config_train.csv \
+    --test data/configs/product_config_test.csv --class-weights balanced \
+    --boost ladin=2.5 --boost ligurian=2.0 --save models/product_xlmr
+
+python scripts/stack_train.py --data data/configs/product_config_train.csv \
+    --ngram models/product_ngram_boost.pt --xlmr models/product_xlmr \
+    --test data/configs/product_config_test.csv --save models/product_stacker.joblib
 ```
 
-**Fine-tune the transformer** (GPU recommended, ~10 min on RTX 3060):
+Run the app:
 
 ```bash
-python transformer.py --data data/balanced_6class.csv --extra-train data/testset_train_clean.csv \
-    --test data/testset_eval_clean.csv --batch 8 --grad-accum 2 --save dialect_xlmr
+python scripts/app.py --model models/product_stacker.joblib \
+    --ngram models/product_ngram_boost.pt --xlmr models/product_xlmr --floor 0.60
 ```
 
-**Build the stacked ensemble** (requires both models saved above):
+(The n-gram model alone — `--model models/product_ngram_boost.pt`, no
+`--ngram`/`--xlmr` — is a lightweight, fast alternative that doesn't need the
+~1.1GB transformer loaded.)
 
-```bash
-python stack_train.py --data data/balanced_6class.csv --ngram dialect_ngram.pt \
-    --xlmr dialect_xlmr --test data/testset_eval_clean.csv --save stacker.joblib
-```
+## Data & Licensing
 
----
-
-## Usage
-
-**Web interface** (recommended):
-
-```bash
-python app.py --model dialect_ngram.pt --floor 0.60
-# open http://localhost:5000
-```
-
-**CLI — single sentence:**
-
-```bash
-python predict.py --model dialect_ngram.pt --floor 0.60 "Napule è 'a cchiù bella città"
-# neapolitan  (94%)   [next: sicilian 3%, standard 2%]
-```
-
-**CLI — interactive:**
-
-```bash
-python predict.py --model dialect_ngram.pt --floor 0.60
-```
-
-**Tune the confidence floor** (prints rejection table for your eval set):
-
-```bash
-python predict.py --model dialect_ngram.pt --calibrate data/testset_eval_clean.csv
-```
-
-The `--floor` flag controls the confidence threshold below which input is returned
-as *uncertain* rather than forced into a label. At 0.60: keeps 96% of real
-dialect sentences, correctly rejects 51% of in-scope errors and most
-non-Italian-family input. Non-Latin-script input (Cyrillic, Arabic, CJK) scores
-near-zero and is caught automatically; Latin-script languages (English, French,
-etc.) are handled by the explicit `other` class.
-
----
-
-## Repository structure
-
-```
-dialettometro/
-├── model.py              TF-IDF + MLP baseline
-├── transformer.py        XLM-RoBERTa fine-tuning
-├── ensemble.py           Error-overlap diagnostic
-├── stack_train.py        Leakage-free stacked ensemble
-├── stack.py              Cross-validated stacker estimate
-├── predict.py            CLI inference with confidence floor
-├── app.py                Flask API server
-├── index.html            Web frontend (Dialettometro)
-├── scraper.py            Wikipedia / Wikisource scraper
-├── tatoeba.py            Tatoeba sentence downloader
-├── audit_junk.py         Content-rule junk auditor
-├── clean_data.py         Safe data cleaner with integrity checks
-├── prep_other.py         other-class balancing for 6-class retrain
-├── requirements.txt      Python dependencies
-├── SOURCES.md            Full data provenance and licensing
-└── data/
-    ├── balanced_clean.csv
-    ├── balanced_6class.csv
-    ├── testset_train_clean.csv
-    ├── testset_eval_clean.csv
-    ├── other_data.csv
-    ├── other_eval.csv
-    └── raw/
-        ├── balanced.csv
-        ├── testset_eval.csv
-        └── testset_train.csv
-```
-
-Trained model files (`dialect_ngram.pt`, `dialect_xlmr/`, `stacker.joblib`) are
-not included — generate them with the training commands above.
-
----
-
-## Data sources & licensing
-
-This dataset is derived from:
-
-- **Wikipedia** (Italian, Neapolitan, Sicilian, Lombard, and Venetian editions),
-  © Wikipedia contributors, licensed CC-BY-SA 4.0.
-- **Tatoeba** (https://tatoeba.org), licensed CC-BY 2.0 FR.
-- **Wikisource** public-domain texts by Nino Martoglio, Luigi Pirandello,
-  Giovanni Boccaccio, and Ippolito Cavalcanti, plus an anonymous Bible-parable
-  translation.
-
-Per-sentence provenance is recorded in the `source` column of each CSV.
-This dataset is released under **CC-BY-SA 4.0**. Code is released under the **MIT License**.
-
-See [SOURCES.md](SOURCES.md) for full attribution, license obligations, and
-documentation of two deliberately excluded sources.
-
----
-
-## Limitations
-
-- **Closed-world classifier:** covers five Italian dialect varieties plus an
-  `other` rejection class. Sardinian, Piedmontese, Ligurian, and other Italian
-  varieties not in scope are forced into the nearest covered class unless caught
-  by the `other` model or the confidence floor.
-- **Register gap:** training is Wikipedia-heavy (formal/encyclopedic). Casual,
-  spoken, and social-media register performs somewhat lower, particularly for
-  Venetian and Neapolitan — the two classes with the thinnest casual-data coverage.
-- **Short text:** sentences under ~5 words are unreliable. The confidence floor
-  mitigates this by returning *uncertain* on low-confidence predictions.
-- **Dialect continuum:** Lombard↔Venetian and Venetian↔Neapolitan overlaps are
-  linguistically real. No model eliminates these; they represent the hard limit
-  of the task at this data scale.
-
----
-
-## Related work
-
-- Aepli et al., *Findings of the VarDial Evaluation Campaign 2022*,
-  ACL Anthology — [2022.vardial-1.1](https://aclanthology.org/2022.vardial-1.1/)
-- ITDI 2022 shared task data: [noe-eva/ITDI_2022](https://github.com/noe-eva/ITDI_2022) (GitHub)
-
----
-
-## Citation
-
-This project independently replicated a finding from the VarDial 2022 evaluation
-campaign. If you reference this replication, please also cite the original work:
-
-```bibtex
-@inproceedings{2022-findings-vardial,
-  title     = "Findings of the {V}ar{D}ial Evaluation Campaign 2022",
-  author    = "Aepli, No{\"e}mi and Anastasopoulos, Antonios and Chifu, Adrian
-               and Domingues, William and Faisal, Fahim and G{\u{a}}man, Mihaela
-               and Ionescu, Radu Tudor and Scherrer, Yves",
-  booktitle = "Proceedings of the Ninth Workshop on NLP for Similar Languages,
-               Varieties and Dialects",
-  month     = oct,
-  year      = "2022",
-  address   = "Gyeongju, Republic of Korea",
-  publisher = "International Committee on Computational Linguistics (ICCL)"
-}
-```
+See [SOURCES.md](SOURCES.md) for full data provenance. In short: training
+data comes from Wikipedia dumps (CC-BY-SA) and Tatoeba (CC-BY 2.0 FR),
+fetched fresh via each script rather than redistributed. The VarDial 2022
+ITDI dev/test files (no license file in their repo, provenance described only
+as "sources unknown by participants") were used **strictly as a held-out
+external benchmark** — scored against, never trained on, never
+redistributed. Prediction files derived from them are excluded from this repo
+via `.gitignore`.
