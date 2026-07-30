@@ -170,6 +170,13 @@ python scripts/app.py --model models/product_stacker.joblib \
 `--ngram`/`--xlmr` — is a lightweight, fast alternative that doesn't need the
 ~1.1GB transformer loaded.)
 
+## Related work
+
+- Aepli et al., *Findings of the VarDial Evaluation Campaign 2022* —
+  [paper](https://aclanthology.org/2022.vardial-1.1/) · [data](https://github.com/noe-eva/ITDI_2022)
+
+---
+
 ## Data & Licensing
 
 See [SOURCES.md](SOURCES.md) for full data provenance. In short: training
