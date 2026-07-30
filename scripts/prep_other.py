@@ -1,3 +1,13 @@
+# ---------------------------------------------------------------------------
+# LEGACY (v1, 6-class). Kept for project history — not part of the current
+# pipeline; expects the old testset_eval_clean.csv and class set.
+#
+# Simple probability-averaging ensemble plus the complementarity diagnostic
+# (do the two models fail on the SAME sentences or different ones?). That
+# diagnostic is what motivated the learned stacker — averaging weights both
+# models equally, while stack_train.py learns per-class weights and beat it.
+# ---------------------------------------------------------------------------
+
 """
 Prep the 'other' class for the 6-class retrain
 ===============================================
