@@ -54,6 +54,10 @@ def read_rows(path):
     return rows[0], rows[1:]
 
 
+# --in is balanced_13class.csv, which despite its name holds 12 labels: the 11
+# dialects + `standard`. The 13th class, `other`, is NOT in this file — it is
+# appended below from --other-train/--other-eval when the product split is built
+# (the ITDI-parity split drops `standard` too, leaving 11).
 header, data = read_rows(args.inp)
 
 

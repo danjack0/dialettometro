@@ -19,3 +19,29 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+===============================================================================
+SCOPE: SOURCE CODE ONLY — THE DATA IS SEPARATELY LICENSED
+===============================================================================
+
+The MIT license above applies to the SOURCE CODE of this repository only
+(the scripts under scripts/, plus configuration and documentation).
+
+It does NOT apply to the datasets committed under data/. Those files are
+derivative works of third-party sources and remain under the licenses of
+those sources:
+
+  * Wikipedia-derived text — the 11 dialect Wikipedia editions plus the
+    Italian edition (`it`, used for the Standard-Italian class) — is licensed
+    CC BY-SA 4.0 (attribution + share-alike).
+
+  * Tatoeba-derived text — casual-register sentences mixed into some dialect
+    classes, and the `other` rejection class — is licensed CC BY 2.0 FR
+    (attribution).
+
+Redistribution of the data/ contents must comply with those licenses. See
+SOURCES.md for per-source provenance and the attribution that applies.
+
+The VarDial 2022 ITDI shared-task dev/test data is NOT licensed for
+redistribution and is used by this project on an eval-only basis; it is not
+part of the intended contents of this repository. See SOURCES.md.
