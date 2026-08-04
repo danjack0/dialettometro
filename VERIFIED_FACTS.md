@@ -2,9 +2,13 @@
 
 Audit of `README.md` / `SOURCES.md` claims against what the code, data, and
 saved model artifacts actually show. Every row is: **claim → verified value →
-source command**. No models were retrained; every number below comes either
-from reading the committed data or from running inference against already-saved
-models (`scripts/itdi_eval.py`, the `Predictor` in `scripts/predict.py`).
+source command**. Sections 1–8 involved **no retraining**: every number comes
+from reading the committed data or from inference against already-saved models
+(`scripts/itdi_eval.py`, the `Predictor` in `scripts/predict.py`), and they
+remain reproducible against the untouched `product_config_*` / `models/product_*`
+artifacts. **Section 9 (issue-D fix)** DID retrain — new models at new paths
+(`models/product_v2_*`) from a new split (`data/configs/product_v2_*`); no
+existing artifact was overwritten.
 
 - Date of audit: 2026-08-03
 - Environment: Python 3.10.11, pandas 2.3.3, scikit-learn 1.7.2, torch 2.6.0+cu124, CUDA on (RTX 3060)
@@ -219,7 +223,7 @@ Command: `python -c "import fitz; d=fitz.open('<paper>.pdf'); print('\n'.join(p.
 | A | ⚠️ `balanced_13class.csv` has **12 labels, not 13** (`other` is not in it). Filename is a misnomer. | §1 | `pd.read_csv('data/cleaned/balanced_13class.csv')['label'].nunique()` → 12 |
 | B | ⚠️ "11 Wikipedia editions" undercounts the full dataset → **12 wikis (adds `it`) + Tatoeba**. | §2 | `ls data/titles/` |
 | C | ❌ README lists the official baselines under **both** the dev and test columns, but they are **test-only** (no official dev baseline exists). | §6 | `cat ../ITDI_2022/baselines/eval_baseline*.txt` (files named `*_test_*`, support 11,087) |
-| D | ❌ **Product `other` class is not held out.** All **500** test-`other` sentences also appear in train-`other`; the eval set is a subset of the train pool. `split_configs.py` appends `other_data.csv` whole to train and `other_eval.csv` whole to test (eval ⊂ data), and `leak_check` never inspects the appended `other` rows. Effect: `other` held-out metrics are invalid (R=0.998), and product macro-F1 is inflated by **≈+0.006** (0.8767 with `other` vs **0.8708** over the 12 non-`other` classes). Wikipedia dialect classes leak **zero** (article-level split is clean). | | `python -c "import pandas as pd; a=pd.read_csv('data/configs/product_config_train.csv'); b=pd.read_csv('data/configs/product_config_test.csv'); ao=set(a[a.label=='other'].sentence.astype(str)); bo=b[b.label=='other']; print((bo.sentence.astype(str).isin(ao)).sum(),'/',len(bo))"` → `500 / 500` |
+| D | ✅ **RESOLVED — see §9.** Was: Product `other` class not held out — all **500** test-`other` sentences also in train-`other` (`split_configs.py` appended `other_data.csv` whole to train and `other_eval.csv` ⊂ it whole to test; `leak_check` never saw the appended rows). Fixed with a disjoint, language-grouped split (`product_v2`) + a strengthened post-append `assert_no_leak`. The naive "≈+0.006" inflation estimate turned out wrong under a *proper* held-out: the effect is model-dependent (n-gram −0.086, stacker +0.004). | §9 | `python -c "import pandas as pd; a=pd.read_csv('data/configs/product_config_train.csv'); b=pd.read_csv('data/configs/product_config_test.csv'); ao=set(a[a.label=='other'].sentence.astype(str)); bo=b[b.label=='other']; print((bo.sentence.astype(str).isin(ao)).sum(),'/',len(bo))"` → `500 / 500` (old bug) |
 | E | ❌ SOURCES.md: "only the derived, cleaned ... `balanced_13class.csv` is committed ... fetched fresh ... rather than redistributed" is **false**. 16 derived sentence-level CSVs (47.66 MB of Wikipedia+Tatoeba text) are committed, incl. `data/raw/combined_raw.csv` (88,244 rows), all config splits, `other_data.csv`, `other_eval.csv`, `data/cleaned/{flagged,removed_expansion}.csv`, legacy `balanced_*`. Raw XML **dumps** are indeed not committed (that part is true). **Resolved:** SOURCES.md now carries a full committed-data inventory. | | `git ls-files data \| grep '\.csv$'` |
 | F | ⚠️ `LICENSE` is plain MIT over "the Software" with no data carve-out, but committed data is CC-BY-SA 4.0 (Wikipedia) / CC-BY 2.0 FR (Tatoeba). Needs code-vs-data scoping + attribution/share-alike note. | `LICENSE` | `cat LICENSE` |
 | G | ✅ **RESOLVED.** 80 distinct sentences byte-identical to ITDI *dev*-set entries (79 SCN, 1 LMO; 0 from test) were found in 4 unused legacy files: `data/raw/testset_{train,eval}.csv`, `data/testset_{train,eval}_clean.csv`. Provenance was subsequently established as an **independent Sicilian Wikisource scrape**, not derivation from ITDI — every row carries its originating work in the `source` column (`Cappiddazzu paga tuttu/Atto I-III`, `'a vilanza/Atto I-III`, `Centona/La 'atta`), all public-domain literary texts ITDI holds no rights over; the ITDI files ship no provenance at all. The 4 files were from the early 5–6-class phase, never fed the current pipeline or the shipped models, and have been **removed** (`git rm`). Documented in SOURCES.md § Note on removed legacy files. | resolved this pass | `pd.read_csv(f)['source'].value_counts()` on the legacy files; `git ls-files data \| grep testset` → empty |
@@ -238,3 +242,81 @@ Command: `python -c "import fitz; d=fitz.open('<paper>.pdf'); print('\n'.join(p.
 | ✅ "~1.1GB transformer" | `product_xlmr/model.safetensors` = 1,112,238,844 B ≈ 1.04 GB | `ls -l models/product_xlmr/model.safetensors` |
 | ✅ dev 7 classes / test 8 classes | dev 6,799 rows / 7 classes; test 11,087 rows / 8 classes | line/label count of ITDI files |
 | ✅ Live demo works | `https://dialettometro.onrender.com` → HTTP 200 (after ~21s Render cold start); `/api/classes` serves the 13-class product config (`has_other:true`, floor 0.6). Deploy reqs exclude transformers ⇒ it runs the n-gram product model. | `curl -sL https://dialettometro.onrender.com/api/classes` |
+---
+
+## 9. Issue-D fix — leak-free `product_v2` (retrained 2026-08-03, RTX 3060)
+
+**The fix.** `scripts/split_product_v2.py` builds `data/configs/product_v2_{train,test}.csv`:
+every non-`other` row is carried over from `product_config` **verbatim** (so the
+only variable is `other`), and the full 11,798-row Tatoeba `other` pool is
+re-partitioned with `per_label_group_split` keyed on `source` (= `tatoeba:<lang>`),
+i.e. **disjointly, grouped by language — no language straddles the split**.
+Result: 5 held-out test languages (`cat`, `hrv`, `por`, `ron`, `spa`; 2,300
+rows), 25 train languages (9,498 rows); a genuine *unseen-language* rejection
+test. One coincidental `sicilian` duplicate carried from `product_config` was
+dropped from test. Sizes: train **38,274**, test **9,490**.
+
+Command: `python scripts/split_product_v2.py`
+
+**Leak-check root-cause fix.** `split_utils.assert_no_leak(train, test)` —
+sentence-level, every class, run on the FINAL rows *after* all appends (the step
+the old `split_configs.leak_check` never did). It fails loudly on any overlap.
+Verified it catches the old bug:
+
+- `product_config` (existing) → raises: `other=500, sicilian=1` (501 total)
+- `itdi_parity` (existing) → raises: `sicilian=1` (a lone coincidental dup;
+  ITDI-parity is otherwise clean and is left untouched — see below)
+- `product_v2` (new) → **passes** (0 overlap)
+
+`split_configs.py` now imports and calls `assert_no_leak` post-append, and gained
+a `--other-pool` option that splits a single `other` pool disjointly by language
+(preferred over the legacy `--other-train`/`--other-eval`, which caused the bug).
+
+Command: `python -c "import sys,csv; sys.path.insert(0,'scripts'); from split_utils import assert_no_leak; rd=lambda p:[(r[0],r[1],r[2]) for r in list(csv.reader(open(p,encoding='utf-8')))[1:] if len(r)>=3]; assert_no_leak(rd('data/configs/product_config_train.csv'),rd('data/configs/product_config_test.csv'))"` → AssertionError (other=500, sicilian=1)
+
+**Verified held-out macro-F1** (`data/configs/product_v2_test.csv`, 9,490 rows;
+`other` = 2,300 rows over 5 unseen languages). Reproduce with the same scorer as
+§3, or read it off `scripts/stack_train.py`'s own once-only test scoring:
+
+| model | product_v2 (leak-free) | old product_config (leaky) | Δ |
+|---|---|---|---|
+| n-gram boost (`models/product_v2_ngram_boost.pt`) | **0.7554** | 0.8411 | −0.086 |
+| XLM-R (`models/product_v2_xlmr`) | **0.8188** | 0.8507 | −0.032 |
+| **stacker** (`models/product_v2_stacker.joblib`) | **0.8811** | 0.8767 | **+0.004** |
+
+**Per-class P / R / F1 (product_v2 stacker) for the watched classes:**
+
+| class | P | R | F1 | support | old stacker F1 |
+|---|---|---|---|---|---|
+| other | 0.9646 | 0.9470 | **0.9557** | 2300 | 0.9478 (leaked, R=0.998) |
+| ligurian | 0.7374 | 0.6687 | 0.7014 | 483 | 0.7735 |
+| tarantino | 0.9710 | 0.9613 | 0.9661 | 800 | 0.9649 |
+| ladin | 0.9865 | 0.4665 | 0.6334 | 313 | 0.5649 |
+
+**Findings.**
+- The naive "≈+0.006 inflation" estimate from issue D was **wrong** for a proper
+  held-out. The true effect is model-dependent and driven by *unseen-language
+  rejection*, not by the raw self-leak.
+- **n-gram alone collapses** (0.8411 → 0.7554): it cannot reject languages it
+  never trained on — unseen Romance text (cat/por/ron/spa) scatters into the
+  dialect classes (588 gold-`other` → ligurian), dropping `other` recall to 0.40
+  and ligurian precision to 0.28. The lightweight demo model is this n-gram, so
+  its real-world unseen-language rejection is weaker than the old number implied.
+- **XLM-R (multilingual) rejects the unseen languages well** (`other` F1 0.96),
+  so the **stacker is essentially unaffected — marginally higher (0.8811)** and
+  now *honest*. The leak had padded the n-gram's apparent score; the stacker
+  never depended on it.
+- n-gram base-model per-class (`other` P=0.9037 R=0.4039 F1=0.5583) and XLM-R
+  base-model (`other` P=0.9934 R=0.9222 F1=0.9565) confirm the mechanism.
+
+**XLM-R training note.** Fine-tuning ran to epoch 3 with val macro-F1 already at
+its plateau (epoch 1→2→3: 0.8194 → 0.8653 → 0.8663). The background job was cut
+off by a ~40-min runtime cap before epoch 5 (not an OOM/error), so the epoch-3
+checkpoint (`hf_out/checkpoint-5790`, the val-F1 plateau, best-so-far) was
+promoted to `models/product_v2_xlmr` — inference files only, no optimizer state.
+
+**ITDI-parity untouched (per instruction).** Config + models never modified
+(mtimes predate this session); re-scored to confirm: stacker macro-F1 = **0.8699**
+(identical to §3). Not retrained.
+
+Command: `python -c "import sys,pandas as pd; sys.path.insert(0,'scripts'); from predict import Predictor; from sklearn.metrics import f1_score; d=pd.read_csv('data/configs/itdi_parity_test.csv'); p=Predictor('models/itdi_stacker.joblib','models/itdi_ngram_boost.pt','models/itdi_xlmr'); import numpy as np; pr=[p.canon[j] for i in range(0,len(d),512) for j in p.proba(d.sentence.astype(str).tolist()[i:i+512]).argmax(1)]; print(round(f1_score(d.label.astype(str),pr,average='macro'),4))"` → 0.8699

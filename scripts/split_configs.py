@@ -32,7 +32,7 @@ import argparse
 import csv
 from collections import Counter
 
-from split_utils import group_key, per_label_group_split
+from split_utils import group_key, per_label_group_split, assert_no_leak
 
 ITDI_11 = {"piedmontese", "venetian", "sicilian", "neapolitan", "emilian",
            "tarantino", "sardinian", "ligurian", "friulian", "ladin", "lombard"}
@@ -41,8 +41,18 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--in", dest="inp", required=True)
 ap.add_argument("--itdi-out", required=True)
 ap.add_argument("--product-out", required=True)
-ap.add_argument("--other-train", default=None, help="other_data.csv — appended whole to product train")
-ap.add_argument("--other-eval", default=None, help="other_eval.csv — appended whole to product test")
+ap.add_argument("--other-pool", default=None,
+                help="single `other` CSV (e.g. other_data.csv). PREFERRED: it is "
+                     "split DISJOINTLY here, grouped by Tatoeba language (the `source` "
+                     "column), so no language and no sentence straddles train/test.")
+ap.add_argument("--other-train", default=None,
+                help="LEGACY/UNSAFE: other rows appended whole to train. If the "
+                     "matching --other-eval is a subset of this file, every eval row "
+                     "also lands in train — the exact bug that made the original "
+                     "product_config's `other` class un-held-out. Prefer --other-pool. "
+                     "The final assert_no_leak below will refuse to write a leaked split.")
+ap.add_argument("--other-eval", default=None,
+                help="LEGACY/UNSAFE: other rows appended whole to test. See --other-train.")
 ap.add_argument("--test-size", type=float, default=0.2)
 ap.add_argument("--seed", type=int, default=42)
 args = ap.parse_args()
@@ -101,16 +111,37 @@ write(itdi_train, f"{args.itdi_out}_train.csv")
 write(itdi_test, f"{args.itdi_out}_test.csv")
 report(itdi_train, itdi_test, "ITDI-parity (11-class)")
 
-# ---- Product config: all classes present, plus 'other' appended whole ----
+# ---- Product config: all classes present, plus 'other' ----
 prod_train, prod_test = per_label_group_split(data, args.test_size, args.seed)
 leak_check(prod_train, prod_test, "Product config (dialect classes)")
 
+# PREFERRED: split a single `other` pool the same source-aware way as every other
+# class. For `other`, the `source` column is the Tatoeba language tag, so grouping
+# by it keeps whole languages together — no language (and so no sentence) can
+# straddle train and test.
+if args.other_pool:
+    _, other_rows = read_rows(args.other_pool)
+    other_rows = [tuple(r[:3]) for r in other_rows]
+    other_tr, other_te = per_label_group_split(other_rows, args.test_size, args.seed)
+    prod_train.extend(other_tr)
+    prod_test.extend(other_te)
+
+# LEGACY path: append pre-split files whole. Kept for compatibility, but the
+# assert_no_leak below is what stops the historical bug (eval ⊂ train) from ever
+# being written again — it inspects the FINAL rows, AFTER these appends, which the
+# old (label, source) leak_check never did.
 if args.other_train:
     _, other_tr_rows = read_rows(args.other_train)
-    prod_train.extend(other_tr_rows)
+    prod_train.extend(tuple(r[:3]) for r in other_tr_rows)
 if args.other_eval:
     _, other_te_rows = read_rows(args.other_eval)
-    prod_test.extend(other_te_rows)
+    prod_test.extend(tuple(r[:3]) for r in other_te_rows)
+
+# ROOT-CAUSE GUARD: sentence-level, every class, on the post-append rows. This is
+# the check the original pipeline lacked — leak_check() above ran only on the
+# dialect split, before `other` was appended, so the leaked `other` eval set
+# sailed through.
+assert_no_leak(prod_train, prod_test, stage="product config (final)")
 
 write(prod_train, f"{args.product_out}_train.csv")
 write(prod_test, f"{args.product_out}_test.csv")

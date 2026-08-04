@@ -108,6 +108,38 @@ def per_label_group_split(rows_in, test_size=0.2, seed=0, verbose=True):
     return train_rows, test_rows
 
 
+def assert_no_leak(train_rows, test_rows, stage="final"):
+    """Fail loudly if ANY test sentence also appears in train, in ANY class.
+
+    This is the check that the old split_configs.leak_check missed: it only
+    inspected the article-level dialect split and ran BEFORE the `other` rows
+    were appended, so a test sentence that was also in the train pool (the whole
+    `other` bug: every test-`other` row was a copy of a train-`other` row) sailed
+    straight through. Run this on the FINAL train/test — after every append — so
+    nothing can be added behind the checker's back.
+
+    Sentence-level and class-agnostic on purpose: a held-out row is leaked if its
+    text was trained on at all, regardless of which label it carries.
+
+    rows are (sentence, label, source, ...) — only slots 0 (sentence) and 1
+    (label) are read. Raises AssertionError listing the offending classes.
+    """
+    train_sent = {r[0] for r in train_rows}
+    leaked = {}
+    for r in test_rows:
+        if r[0] in train_sent:
+            leaked[r[1]] = leaked.get(r[1], 0) + 1
+    if leaked:
+        total = sum(leaked.values())
+        detail = ", ".join(f"{lab}={n}" for lab, n in sorted(leaked.items(), key=lambda x: -x[1]))
+        raise AssertionError(
+            f"LEAK [{stage}]: {total} test sentence(s) also appear in train "
+            f"(by class: {detail}). A held-out row that was trained on invalidates "
+            f"that class's score. Partition every class disjointly before writing "
+            f"the split.")
+    return True
+
+
 def split_indices(sentences, labels, sources, test_size=0.2, seed=0, verbose=True):
     """Index-based wrapper for scripts that work with numpy arrays.
 
