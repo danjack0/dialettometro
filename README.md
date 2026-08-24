@@ -114,6 +114,20 @@ What the honest split reveals (all verified against the retrained
   (macro-F1 0.8194 → 0.8653 → 0.8663); the epoch-3 checkpoint was promoted. See
   [VERIFIED_FACTS.md](VERIFIED_FACTS.md) §9.
 
+**Why the live demo still serves the original n-gram.** The demo deliberately
+loads `product_ngram_boost.pt` (the original `product_config` model) rather
+than the `product_v2` one — measurement artifact vs. deployment artifact.
+`product_v2` withholds five Tatoeba languages from training *so that* its test
+set can prove something, which is exactly what makes its scores honest and the
+right ones to quote. But the original trained on all 30 `other` languages,
+including the Romance neighbours (Spanish, Portuguese, Catalan, Romanian) a
+real user is most likely to paste in by accident, so in deployment it rejects a
+strictly wider set of languages. The cost is that no valid held-out score can
+ever be reported from it: every sentence available to score its `other` class
+was also in its training set. Quoting numbers from the measurable model while
+shipping the better-covered one is the intended split of duties, not an
+oversight.
+
 ### External benchmark: VarDial 2022 ITDI held-out set (eval-only, never trained on)
 
 The ITDI 2022 organizers' dev/test files were used strictly to score the

@@ -52,9 +52,9 @@ Used for two purposes (34 distinct Tatoeba language subsets in total):
 
 ## Committed data inventory
 
-Every CSV tracked under `data/` is listed below (16 files, **47.66 MB**; all
+Every CSV tracked under `data/` is listed below (18 files, **53.63 MB**; all
 tracked files under `data/`, including the 15 `titles/*.txt` harvest lists,
-total **48.83 MB** across 31 files). All text is Wikipedia-derived (CC BY-SA
+total **54.80 MB** across 33 files). All text is Wikipedia-derived (CC BY-SA
 4.0) or Tatoeba-derived (CC BY 2.0 FR). Reproduce this list with
 `git ls-files data | grep '\.csv$'`.
 
@@ -64,8 +64,17 @@ total **48.83 MB** across 31 files). All text is Wikipedia-derived (CC BY-SA
   corpus (12 labels: 11 dialects + Standard).
 - `data/configs/itdi_parity_train.csv` / `itdi_parity_test.csv` — 25,576 /
   6,391 — the 11-class ITDI-parity split.
+- `data/configs/product_v2_train.csv` / `product_v2_test.csv` — 38,274 /
+  9,490 — the current, leak-free 13-class product split (adds Standard +
+  `other`). The `other` class is partitioned **by Tatoeba language**, so 5 of
+  the 30 languages are held out of training entirely and no sentence straddles
+  train and test.
 - `data/configs/product_config_train.csv` / `product_config_test.csv` —
-  40,574 / 7,691 — the 13-class product split (adds Standard + `other`).
+  40,574 / 7,691 — the original 13-class product split. **Legacy —
+  superseded by `product_v2`**: all 500 of its test-`other` rows also appear
+  in training, so its `other` class has no valid held-out score. Retained
+  because the shipped `models/product_*` (including the live demo's n-gram)
+  were trained on it.
 
 **Active pipeline — raw scrape (pre-cleaning inputs)**
 
