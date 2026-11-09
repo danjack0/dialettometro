@@ -220,13 +220,17 @@ external, casual-register text:
   Wikipedia-trained signal is encyclopedic-register-specific and doesn't
   transfer to spoken/casual text.
 
-### Known limitation: Ladin
+### Known limitations: Ladin and Emilian-Romagnol
 
-Precision stays high (0.97-1.00) but recall collapses (0.24-0.47 depending on
-config) — the model learned a narrow, confident signature from the ~1,250
-training rows available (Ladin's Wikipedia is small) and won't fire on
+**Ladin.** Precision stays high (0.97-1.00) but recall collapses (0.24-0.47
+depending on config) — the model learned a narrow, confident signature from the
+~1,250 training rows available (Ladin's Wikipedia is small) and won't fire on
 anything outside it. This is a data-volume ceiling, not a bug; boosting its
 loss weight helps but has a hard limit.
+
+**Emilian-Romagnol** is the smallest class (548 rows from 337 articles, ~1.6
+sentences per article): its Wikipedia is mostly short stubs, so the class could
+not be filled to the same size as the others despite a second harvest batch.
 
 ## Project structure
 
