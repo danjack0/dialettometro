@@ -1,0 +1,19 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        # split_utils has no heavy deps; skip torch/transformers to keep CI fast
+        run: pip install pytest scikit-learn
+      - name: Run tests
+        run: pytest -q
