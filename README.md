@@ -1,5 +1,7 @@
 # Dialettometro
 
+[![tests](https://github.com/danjack0/dialettometro/actions/workflows/tests.yml/badge.svg)](https://github.com/danjack0/dialettometro/actions/workflows/tests.yml)
+
 An Italian regional dialect classifier covering 11 varieties, built as an
 independent replication of the [VarDial 2022 ITDI shared task](https://github.com/noe-eva/ITDI_2022),
 with a product-oriented extension for standalone use.
