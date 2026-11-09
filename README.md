@@ -128,6 +128,47 @@ was also in its training set. Quoting numbers from the measurable model while
 shipping the better-covered one is the intended split of duties, not an
 oversight.
 
+### Fixed: GroupShuffleSplit skewed per-class test ratios
+
+Splitting by source article is required here: sentences from the same
+Wikipedia article share topic words and names, so letting one article span
+train and test inflates scores. The obvious tool, scikit-learn's
+`GroupShuffleSplit`, does keep articles whole, but it samples **20% of the
+groups, not 20% of the rows**. Article lengths in a wiki scrape vary wildly (a
+few long articles plus a long tail of stubs), so a class's real test share
+depends on which articles happen to be drawn.
+
+Measured on the cleaned dataset over 50 seeds (`scripts/audit_split_skew.py`):
+
+| Class | Rows | Articles | `GroupShuffleSplit` test share | `per_label_group_split` test share |
+|---|---|---|---|---|
+| Ligurian | 2,417 | 290 | **3.5% – 78.4%** | 20.0% |
+| Piedmontese | 1,648 | 146 | **4.6% – 64.3%** | 20.0% |
+| Emilian-Romagnol | 548 | 337 | 11.1% – 42.0% | 19.9% |
+| Tarantino | 4,000 | 435 | 8.5% – 31.6% | 20.0% |
+| Friulian | 4,000 | 1,117 | 17.5% – 23.8% | 20.0% |
+
+Worst deviation from the 20% target across all 12 classes: **58.4 points** for
+`GroupShuffleSplit`, **0.1 points** for the replacement. The classes with few,
+long articles (Ligurian, Piedmontese) are hit hardest; classes with many short
+articles (Friulian) barely move.
+
+**Why it mattered.** The same skew hit the in-script validation split used for
+early stopping. In one run, validation held 1,753 Ligurian rows against 55
+Emilian rows, so the early-stopping signal was dominated by one class. The
+product config restored its "best" checkpoint at **epoch 1**, a barely trained
+model, with nothing visibly wrong in the training log.
+
+**Fix** (`scripts/split_utils.py`, one implementation imported by every
+training script): per label, group that label's rows by article, shuffle the
+groups with a per-label seed, then best-fit fill the held-out side **by row
+count** until the target fraction is met. Whole articles still move together,
+so no article spans both sides. Because `model.py`, `transformer.py` and
+`stack_train.py` all call the same function with the same seed, the stacker is
+meta-trained on exactly the rows the base models held out.
+
+Reproduce: `python scripts/audit_split_skew.py` (add `--seeds 200` for more).
+
 ### External benchmark: VarDial 2022 ITDI held-out set (eval-only, never trained on)
 
 The ITDI 2022 organizers' dev/test files were used strictly to score the
@@ -212,10 +253,8 @@ index.html   frontend, served by scripts/app.py
 4. `prepare_expansion_dataset.py` — applies the audit, reduces template
    boilerplate, caps oversized classes with source-diversity-aware sampling
 5. `split_configs.py` / `split_utils.py` — builds both class configs with a
-   row-count-aware, per-label, article-level train/test split (standard
-   `GroupShuffleSplit` samples by group *count*, which badly skews splits
-   when article lengths vary — this project uses a custom split that targets
-   the row ratio instead)
+   row-count-aware, per-label, article-level train/test split (see
+   [Fixed: GroupShuffleSplit skewed per-class test ratios](#fixed-groupshufflesplit-skewed-per-class-test-ratios))
 6. `split_product_v2.py` — rebuilds the product split with the `other` pool
    partitioned disjointly by Tatoeba language, so held-out `other` is a genuine
    unseen-language rejection test; `split_utils.assert_no_leak` runs on the
