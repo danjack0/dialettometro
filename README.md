@@ -154,10 +154,14 @@ long articles (Ligurian, Piedmontese) are hit hardest; classes with many short
 articles (Friulian) barely move.
 
 **Why it mattered.** The same skew hit the in-script validation split used for
-early stopping. In one run, validation held 1,753 Ligurian rows against 55
-Emilian rows, so the early-stopping signal was dominated by one class. The
-product config restored its "best" checkpoint at **epoch 1**, a barely trained
-model, with nothing visibly wrong in the training log.
+early stopping. Re-running the original `model.py` split
+(`GroupShuffleSplit(test_size=0.2, random_state=0)`) on
+`product_config_train.csv` gives a validation set with 1,753 Ligurian rows
+against 55 Emilian rows, so the early-stopping signal was dominated by one
+class; the same call on the ITDI-parity training file swings the other way,
+leaving Ligurian with only 47. The product config restored its "best"
+checkpoint at **epoch 1**, a barely trained model, with nothing visibly wrong
+in the training log.
 
 **Fix** (`scripts/split_utils.py`, one implementation imported by every
 training script): per label, group that label's rows by article, shuffle the
