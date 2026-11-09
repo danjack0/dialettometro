@@ -161,7 +161,8 @@ against 55 Emilian rows, so the early-stopping signal was dominated by one
 class; the same call on the ITDI-parity training file swings the other way,
 leaving Ligurian with only 47. The product config restored its "best"
 checkpoint at **epoch 1**, a barely trained model, with nothing visibly wrong
-in the training log.
+in the training log (noted in `split_utils.py` when the bug was found; the
+original run's log was not kept).
 
 **Fix** (`scripts/split_utils.py`, one implementation imported by every
 training script): per label, group that label's rows by article, shuffle the
